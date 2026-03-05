@@ -1,0 +1,260 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #000000;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: opacity 4s ease-in;
+}
+
+#app.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+#tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  transform: translate(15px, 15px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: opacity 0.2s ease-out;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+#tooltip.hidden {
+  opacity: 0;
+}
+
+#search-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(7, 11, 25, 0.85);
+  border: 1px solid #4488ff;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 10px rgba(68, 136, 255, 0.2);
+  backdrop-filter: blur(5px);
+  z-index: 20;
+}
+
+#search-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  padding: 8px 12px;
+  width: 250px;
+  outline: none;
+}
+
+#search-input::placeholder {
+  color: #88aadd;
+}
+
+#search-results {
+  margin: 10px 0 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(68, 136, 255, 0.3);
+}
+
+#search-results.hidden {
+  display: none;
+}
+
+#search-results li {
+  padding: 10px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s, padding-left 0.2s;
+}
+
+#search-results li:hover {
+  background: rgba(68, 136, 255, 0.2);
+  padding-left: 15px;
+  color: #00e5ff;
+}
+
+/* Custom Scrollbar for results */
+#search-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+#search-results::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+#search-results::-webkit-scrollbar-thumb {
+  background: #4488ff;
+  border-radius: 3px;
+}
+
+#volume-control {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(7, 11, 25, 0.6);
+  border: 1px solid rgba(68, 136, 255, 0.4);
+  border-radius: 20px;
+  padding: 8px 15px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 10px rgba(68, 136, 255, 0.1);
+  backdrop-filter: blur(5px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#mute-btn {
+  background: none;
+  border: none;
+  color: #88aadd;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+#mute-btn:hover {
+  color: #fff;
+  text-shadow: 0 0 5px #4488ff;
+}
+
+#mute-btn.muted {
+  color: #ff2266;
+  text-shadow: 0 0 5px #ff2266;
+}
+
+/* Custom range slider styling */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  background: transparent;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  margin-top: -5px;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  transition: transform 0.2s;
+}
+
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 2px;
+  cursor: pointer;
+  background: rgba(136, 170, 221, 0.4);
+  border-radius: 1px;
+}
+
+/* Landing Page Styles */
+#landing-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  transition: opacity 4s ease-out;
+}
+
+#landing-page.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.landing-content {
+  text-align: center;
+  color: #fff;
+  font-family: 'Helvetica Neue', sans-serif;
+  letter-spacing: 2px;
+}
+
+.landing-content h1 {
+  font-size: 3rem;
+  font-weight: 300;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.landing-content p {
+  font-size: 1rem;
+  color: #888;
+  margin-bottom: 40px;
+  font-weight: 300;
+}
+
+#enter-btn {
+  background: transparent;
+  border: 1px solid #fff;
+  color: #fff;
+  padding: 12px 30px;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  outline: none;
+}
+
+#enter-btn:hover {
+  background: #fff;
+  color: #000;
+}
