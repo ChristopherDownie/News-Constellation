@@ -105,6 +105,12 @@ const audioAnalysers: Map<string, AnalyserNode> = new Map();
 const audioGainNodes: Map<string, GainNode> = new Map();
 const audioDataArrays: Map<string, Uint8Array<ArrayBuffer>> = new Map();
 
+// --- Woosh Sound State ---
+let wooshGain: GainNode | null = null;
+let wooshLowpass: BiquadFilterNode | null = null;
+let previousCameraPos = new THREE.Vector3();
+let smoothedSpeed = 0;
+
 // Fly-to Animation State
 let isFlying = false;
 let targetCameraPos = new THREE.Vector3();
@@ -130,6 +136,9 @@ function init() {
   // Audio Setup
   audioListener = new THREE.AudioListener();
   camera.add(audioListener);
+
+  // Procedural woosh sound
+  setupWooshSound();
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -431,6 +440,50 @@ function createBounds() {
   });
   boundsSphere = new THREE.Mesh(geometry, material);
   scene.add(boundsSphere);
+}
+
+function setupWooshSound() {
+  const ctx = audioListener.context;
+
+  // Create a looping buffer of white noise (2 seconds)
+  const bufferSize = ctx.sampleRate * 2;
+  const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+
+  const noiseSource = ctx.createBufferSource();
+  noiseSource.buffer = noiseBuffer;
+  noiseSource.loop = true;
+
+  // Bandpass filter — centered deep (200 Hz) for a low rumbling wind
+  const bandpass = ctx.createBiquadFilter();
+  bandpass.type = 'bandpass';
+  bandpass.frequency.value = 200;
+  bandpass.Q.value = 0.5; // Wide bandwidth for natural wind character
+
+  // Lowpass filter — cutoff rises with speed for more brightness at high velocity
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 150; // Starts very muffled
+  lowpass.Q.value = 0.7;
+
+  // Gain node — volume driven by camera speed
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+
+  // Pipeline: noise -> bandpass -> lowpass -> gain -> destination
+  noiseSource.connect(bandpass);
+  bandpass.connect(lowpass);
+  lowpass.connect(gain);
+  gain.connect(audioListener.getInput());
+
+  noiseSource.start();
+
+  wooshGain = gain;
+  wooshLowpass = lowpass;
+  previousCameraPos.copy(camera.position);
 }
 
 function setupStreamingAudio(node: GraphNode) {
@@ -1070,6 +1123,30 @@ function onDoubleClick() {
 
 function animate(time: number) {
   requestAnimationFrame(animate);
+
+  // --- Woosh: track camera velocity ---
+  const cameraDelta = camera.position.distanceTo(previousCameraPos);
+  previousCameraPos.copy(camera.position);
+
+  // Smooth the speed to avoid jitter (exponential moving average)
+  smoothedSpeed += (cameraDelta - smoothedSpeed) * 0.08;
+
+  if (wooshGain && wooshLowpass) {
+    // Map speed -> volume: ramp from 0 at rest to ~0.25 at high speed
+    // Typical orbit drag speed is 1-10, zoom can be 10-40+
+    const speedNorm = Math.min(smoothedSpeed / 25, 1.0);
+    const targetWooshVol = speedNorm * speedNorm * 0.25; // quadratic for natural feel
+    wooshGain.gain.value += (targetWooshVol - wooshGain.gain.value) * 0.1;
+
+    // Map speed -> lowpass cutoff: 150 Hz at rest up to 1200 Hz at speed
+    const targetCutoff = 150 + speedNorm * 1050;
+    wooshLowpass.frequency.value += (targetCutoff - wooshLowpass.frequency.value) * 0.1;
+
+    // Respect mute state
+    if (isMuted || !isAudioActive) {
+      wooshGain.gain.value = 0;
+    }
+  }
 
   updatePhysics(time);
   updateInteraction();
