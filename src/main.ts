@@ -5,6 +5,8 @@ import { createNoise3D } from 'simplex-noise';
 import { generateGraph, NodeType } from './graph';
 import type { GraphData, GraphNode } from './graph';
 import { AudioVisualizer } from './audioVisualizer';
+import { initLandingParticles, stopLandingParticles } from './landingParticles';
+import { YouTubePlayerManager } from './youtubePlayer';
 
 // --- Configuration ---
 const THEMES = {
@@ -91,21 +93,23 @@ let unmutedVolume = 0.3; // Store volume before muting
 let currentMasterVolume = 0.0;
 let isAudioActive = false;
 let isMuted = false;
-const activeAudioElements: HTMLAudioElement[] = [];
 
-// Map each audio element's nodeId to its 3D position for distance-based volume
+// YouTube Player Manager (replaces HTMLAudioElement pipeline)
+const ytManager = new YouTubePlayerManager();
+
+// Map each YouTube player's nodeId to its 3D position for distance-based volume
 const audioNodePositions: Map<string, THREE.Vector3> = new Map();
 
 const nodeLabels: Map<number, HTMLDivElement> = new Map();
 
 // Focus-mode fade targets for smooth transitions
 const audioFadeTargets: Map<string, number> = new Map();
+// Smoothed fade values for gradual volume transitions
+const audioFadeCurrents: Map<string, number> = new Map();
 
-// --- Frequency Analysers ---
-const audioAnalysers: Map<string, AnalyserNode> = new Map();
-const audioGainNodes: Map<string, GainNode> = new Map();
-const audioDataArrays: Map<string, Uint8Array<ArrayBuffer>> = new Map();
+// --- Procedural Frequency Data for Visualizers ---
 const audioVisualizers: Map<string, AudioVisualizer> = new Map();
+const proceduralFreqData: Map<string, Uint8Array> = new Map();
 
 // --- Woosh Sound State ---
 let wooshGain: GainNode | null = null;
@@ -135,9 +139,12 @@ function init() {
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
   camera.position.set(300, 400, 900);
 
-  // Audio Setup
+  // Audio Setup (Three.js AudioListener for woosh only)
   audioListener = new THREE.AudioListener();
   camera.add(audioListener);
+
+  // Load YouTube IFrame API
+  ytManager.loadAPI();
 
   // Procedural woosh sound
   setupWooshSound();
@@ -320,6 +327,7 @@ function init() {
         isMuted = false;
         muteBtn.innerText = 'MUTE';
         muteBtn.classList.remove('muted');
+        ytManager.unmuteAll();
       }
       targetMasterVolume = val;
       unmutedVolume = val;
@@ -333,12 +341,14 @@ function init() {
         volumeSlider.value = '0';
         muteBtn.innerText = 'UNMUTE';
         muteBtn.classList.add('muted');
+        ytManager.muteAll();
       } else {
         // Unmute
         targetMasterVolume = unmutedVolume > 0 ? unmutedVolume : 0.3;
         volumeSlider.value = targetMasterVolume.toString();
         muteBtn.innerText = 'MUTE';
         muteBtn.classList.remove('muted');
+        ytManager.unmuteAll();
       }
     });
   }
@@ -351,12 +361,6 @@ function init() {
       if (audioListener.context.state === 'suspended') {
         audioListener.context.resume();
       }
-      isAudioActive = true;
-
-      // Start the live streams globally
-      activeAudioElements.forEach(el => {
-        el.play().catch(e => console.warn('Audio play error:', e));
-      });
 
       // 1. Hide landing page
       landingPage.classList.add('hidden');
@@ -369,8 +373,14 @@ function init() {
         setTimeout(() => {
           tutorialOverlay.classList.add('fade-out');
           appContainer.classList.remove('hidden');
+          stopLandingParticles();
 
-          // 4. Remove tutorial from DOM after fade completes
+          // 4. Start YouTube live streams AFTER tutorial fades
+          // (audio should only be heard when user zooms into the sphere)
+          isAudioActive = true;
+          ytManager.playAll();
+
+          // 5. Remove tutorial from DOM after fade completes
           setTimeout(() => {
             tutorialOverlay.style.display = 'none';
           }, 1500);
@@ -378,9 +388,15 @@ function init() {
       } else {
         // Fallback: no tutorial element, just show app
         appContainer.classList.remove('hidden');
+        stopLandingParticles();
+        isAudioActive = true;
+        ytManager.playAll();
       }
     });
   }
+
+  // Initialize landing experience
+  initLandingParticles();
 }
 
 function createNodes() {
@@ -399,15 +415,18 @@ function createNodes() {
     nodeMesh.setMatrixAt(i, dummy.matrix);
     nodeMesh.setColorAt(i, node.color);
 
-    // If it's a Stream Hub, attach live streaming positional audio
+    // If it's a Stream Hub, attach YouTube live stream audio
     if (node.type === NodeType.StreamHub) {
-      setupStreamingAudio(node);
+      setupYouTubeAudio(node);
 
       // Create spherical audio visualizer around this hub
       const visualizer = new AudioVisualizer(node.size, currentTheme);
       visualizer.setPosition(node.position);
       scene.add(visualizer.group);
       audioVisualizers.set(node.id.toString(), visualizer);
+
+      // Initialize procedural frequency data array (128 bins to match old analyser)
+      proceduralFreqData.set(node.id.toString(), new Uint8Array(128));
 
       // Create HTML label overlay
       const label = document.createElement('div');
@@ -497,41 +516,56 @@ function setupWooshSound() {
   previousCameraPos.copy(camera.position);
 }
 
-function setupStreamingAudio(node: GraphNode) {
-  // Create HTML Audio element. CrossOrigin anonymous is required for proxying.
-  const audioElement = new Audio(node.streamUrl);
-  audioElement.crossOrigin = "anonymous";
-  audioElement.loop = true;
+function setupYouTubeAudio(node: GraphNode) {
+  if (!node.youtubeVideoId) return;
 
-  // We handle volume entirely through Web Audio GainNodes now,
-  // but we still want the media element to not blast at 100% while WebAudio initializes
-  audioElement.volume = 1.0;
+  // Register this source with the YouTube Player Manager
+  ytManager.addSource({
+    nodeId: node.id,
+    videoId: node.youtubeVideoId,
+    name: node.text,
+  });
 
-  // Tag element with node ID
-  audioElement.dataset.nodeId = node.id.toString();
-
-  // Create Web Audio nodes
-  const source = audioListener.context.createMediaElementSource(audioElement);
-  const analyser = audioListener.context.createAnalyser();
-  analyser.fftSize = 256; // 128 frequency bins
-  const gainNode = audioListener.context.createGain();
-  gainNode.gain.value = 0; // Start silent
-
-  // Connect the pipeline: Source -> Analyser -> Gain -> Global Audio Listener Dest
-  source.connect(analyser);
-  analyser.connect(gainNode);
-  gainNode.connect(audioListener.getInput());
-
-  // Store references for the render loop
-  audioAnalysers.set(node.id.toString(), analyser);
-  audioGainNodes.set(node.id.toString(), gainNode);
-  audioDataArrays.set(node.id.toString(), new Uint8Array(analyser.frequencyBinCount));
-
-  activeAudioElements.push(audioElement);
+  // Store position for distance-based volume calculation
   audioNodePositions.set(node.id.toString(), node.position);
 
-  // Note: play() won't emit sound until context resumes and gain goes up
-  audioElement.play().catch(e => console.warn("Audio playback failed:", e));
+  // Initialize fade targets
+  audioFadeTargets.set(node.id.toString(), 1.0);
+  audioFadeCurrents.set(node.id.toString(), 0.0);
+}
+
+/**
+ * Generate procedural frequency data that looks organic and alive.
+ * Uses simplex noise and time-based oscillation to simulate audio-reactive visuals.
+ */
+function generateProceduralFrequency(nodeId: string, time: number): Uint8Array {
+  const data = proceduralFreqData.get(nodeId);
+  if (!data) return new Uint8Array(128);
+
+  const seed = parseInt(nodeId) * 137.5; // Unique per node
+  const t = time * 0.001;
+
+  for (let i = 0; i < data.length; i++) {
+    // Lower bins (bass) should be more active
+    const freqFactor = 1.0 - (i / data.length) * 0.6;
+
+    // Multi-octave noise for organic feel
+    const n1 = noise3D(i * 0.15 + seed, t * 1.2, 0) * 0.5 + 0.5;
+    const n2 = noise3D(i * 0.3 + seed + 100, t * 2.4, 0) * 0.3 + 0.5;
+    const n3 = noise3D(i * 0.05 + seed + 200, t * 0.6, 0) * 0.4 + 0.5;
+
+    // Pulsing envelope
+    const pulse = Math.sin(t * 1.5 + seed * 0.01) * 0.3 + 0.7;
+    const pulse2 = Math.sin(t * 0.7 + seed * 0.02 + i * 0.1) * 0.2 + 0.8;
+
+    // Combine everything
+    const value = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2) * freqFactor * pulse * pulse2;
+
+    // Scale to 0-255 range with some randomness for liveliness
+    data[i] = Math.min(255, Math.max(0, Math.floor(value * 200 + Math.random() * 15)));
+  }
+
+  return data;
 }
 
 function createEdges() {
@@ -742,34 +776,30 @@ function updatePhysics(time: number) {
     let audioPulse = 0;
 
     if (node.type === NodeType.StreamHub) {
-      const analyser = audioAnalysers.get(node.id.toString());
-      const dataArray = audioDataArrays.get(node.id.toString());
+      // Generate procedural frequency data for this node
+      const dataArray = generateProceduralFrequency(node.id.toString(), time);
 
-      if (analyser && dataArray) {
-        analyser.getByteFrequencyData(dataArray);
-
-        // Update the spherical audio visualizer with frequency data
-        const visualizer = audioVisualizers.get(node.id.toString());
-        if (visualizer) {
-          visualizer.update(dataArray, time);
-          visualizer.setPosition(node.position);
-        }
-
-        // Sum lower-mid frequencies (bass/vocals)
-        let sum = 0;
-        const startBin = 2; // skip sub-bass noise
-        const endBin = 30;  // out of 128 bins
-        for (let b = startBin; b < endBin; b++) {
-          sum += dataArray[b];
-        }
-
-        // Average and normalize 0-1
-        const avg = sum / (endBin - startBin);
-        const normalized = avg / 255.0;
-
-        // Emphasize spikes using a power curve, scale up
-        audioPulse = Math.pow(normalized, 1.5) * 2.5;
+      // Update the spherical audio visualizer with procedural frequency data
+      const visualizer = audioVisualizers.get(node.id.toString());
+      if (visualizer) {
+        visualizer.update(dataArray, time);
+        visualizer.setPosition(node.position);
       }
+
+      // Sum lower-mid frequencies (bass/vocals) from procedural data
+      let sum = 0;
+      const startBin = 2; // skip sub-bass noise
+      const endBin = 30;  // out of 128 bins
+      for (let b = startBin; b < endBin; b++) {
+        sum += dataArray[b];
+      }
+
+      // Average and normalize 0-1
+      const avg = sum / (endBin - startBin);
+      const normalized = avg / 255.0;
+
+      // Emphasize spikes using a power curve, scale up
+      audioPulse = Math.pow(normalized, 1.5) * 2.5;
     } else {
       // Default slow idle pulse for non-hubs
       audioPulse = Math.sin(time * CONFIG.pulseSpeed + node.id) * CONFIG.pulseAmplitude;
@@ -896,11 +926,11 @@ function updatePhysics(time: number) {
   if (hubDustPoints && hubDustHubIndices) {
     const positions = hubDustPoints.geometry.attributes.position.array as Float32Array;
 
-    // First, calculate a high-frequency (treble) explosion factor per hub
+    // Calculate a high-frequency (treble) explosion factor per hub using procedural data
     const hubTrebleFactors: Map<number, number> = new Map();
     for (const hub of graphData.nodes) {
       if (hub.type === NodeType.StreamHub) {
-        const dataArray = audioDataArrays.get(hub.id.toString());
+        const dataArray = proceduralFreqData.get(hub.id.toString());
         if (dataArray) {
           let sum = 0;
           // High frequencies are roughly bins 50 to 100 out of 128
@@ -1064,9 +1094,8 @@ function updateProximityLabels() {
 function exitFocusMode() {
   focusedNodeId = null;
 
-  // Fade all audio streams back to full volume
-  activeAudioElements.forEach(el => {
-    const nodeId = el.dataset.nodeId || '';
+  // Fade all YouTube streams back to full volume
+  ytManager.getNodeIds().forEach(nodeId => {
     audioFadeTargets.set(nodeId, 1.0);
   });
 
@@ -1088,8 +1117,7 @@ function flyToNode(nodeId: number) {
     focusedNodeId = nodeId;
 
     // Set fade targets: focused source stays full, others fade out
-    activeAudioElements.forEach(el => {
-      const nId = el.dataset.nodeId || '';
+    ytManager.getNodeIds().forEach(nId => {
       if (nId === nodeId.toString()) {
         audioFadeTargets.set(nId, 1.0);
       } else {
@@ -1186,9 +1214,8 @@ function animate(time: number) {
   updateInteraction();
   updateProximityLabels();
 
-  // --- Per-element spatial volume ---
-  // Instead of Web Audio API positional audio, manually compute volume
-  // for each stream based on camera distance to its node.
+  // --- Per-player spatial volume (YouTube IFrame API) ---
+  // Compute volume for each YouTube stream based on camera distance to its node.
   {
     let globalEnvelope = 0.0;
 
@@ -1216,26 +1243,22 @@ function animate(time: number) {
       currentMasterVolume = globalEnvelope;
     }
 
-    // Apply per-element spatial volume
-    activeAudioElements.forEach(el => {
-      const nodeId = el.dataset.nodeId || '';
+    // Apply per-player spatial volume via YouTube API
+    ytManager.getNodeIds().forEach(nodeId => {
       const nodePos = audioNodePositions.get(nodeId);
-      const gainNode = audioGainNodes.get(nodeId);
 
       // Focus-mode fade target
       const fadeTarget = audioFadeTargets.get(nodeId) ?? 1.0;
 
-      // We use the GainNode for volume now, instead of the HTML element
-      if (!gainNode) return;
-
       // Smooth fade toward target
-      const currentFade = gainNode.gain.value;
+      const currentFade = audioFadeCurrents.get(nodeId) ?? 0.0;
       let newFade = currentFade;
       if (Math.abs(currentFade - fadeTarget) > 0.005) {
         newFade = currentFade + (fadeTarget - currentFade) * 0.03;
       } else {
         newFade = fadeTarget;
       }
+      audioFadeCurrents.set(nodeId, newFade);
 
       // Distance-based attenuation (generous range so streams overlap)
       let spatialGain = 1.0;
@@ -1252,9 +1275,15 @@ function animate(time: number) {
         }
       }
 
-      // Apply the computed smooth gain
-      gainNode.gain.value = Math.max(0, Math.min(1, currentMasterVolume * spatialGain * newFade));
+      // Compute final volume (0-100 for YouTube API)
+      const finalVol = Math.max(0, Math.min(100, currentMasterVolume * spatialGain * newFade * 100));
+      ytManager.setVolume(nodeId, finalVol);
     });
+
+    // Handle mute state
+    if (isMuted || !isAudioActive) {
+      ytManager.muteAll();
+    }
   }
 
   if (isFlying) {

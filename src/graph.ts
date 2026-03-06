@@ -17,7 +17,7 @@ export interface GraphNode {
     connections: number[];
     color: THREE.Color;
     text: string;
-    streamUrl?: string;
+    youtubeVideoId?: string;
 }
 
 export interface Edge {
@@ -120,14 +120,14 @@ export function generateGraph(): GraphData {
 
     // Mock Data Arrays
     const outlets = [
-        { name: "NPR Live", url: "/api/npr-live" },
-        { name: "Bloomberg Radio", url: "/api/bloomberg" },
-        { name: "WNYC FM", url: "/api/wnyc" },
-        { name: "WQXR", url: "/api/wqxr" },
-        { name: "WQXR New Sounds", url: "/api/wqxr-newsounds" },
-        { name: "KQED Public Radio", url: "/api/kqed" },
-        { name: "NPR News", url: "/api/npr-news" },
-        { name: "NPR Talk", url: "/api/npr-talk" },
+        { name: "NBC News NOW", videoId: "enKWyZH6dVI" },
+        { name: "ABC News Live", videoId: "_03-Efdda7s" },
+        { name: "CBS News 24/7", videoId: "r6qOTHqM3NQ" },
+        { name: "Al Jazeera English", videoId: "gCNeDWCI0vo" },
+        { name: "CGTN", videoId: "BOy2xDU1LC8" },
+        { name: "France 24 English", videoId: "Ap-UM1O9RBU" },
+        { name: "DW News", videoId: "LuKwFajn37U" },
+        { name: "Euronews", videoId: "pykpO5kQJ98" },
     ];
 
     const headlinePrefixes = [
@@ -174,7 +174,7 @@ export function generateGraph(): GraphData {
             connections: [],
             color: getRandomNodeColor(NodeType.StreamHub),
             text: outlet.name + suffix,
-            streamUrl: outlet.url
+            youtubeVideoId: outlet.videoId
         };
         nodes.push(streamHub);
         hubIndices.push(streamHub.id);
