@@ -19,12 +19,12 @@ const THEMES = {
     nodeTextDimmed: '#666677'
   },
   light: {
-    backgroundColor: 0xe8e4e0, // Milky warm grey
-    edgeColor: 0x00e5cc, // Neon teal connections
-    ambientDustColor: 0x000000, // Pure black ambient dust
-    hubDustColor: 0x111111, // Near-black hub dust
-    ambientDustOpacity: 1.0, // Full opacity
-    nodeTextDimmed: '#aaaaaa'
+    backgroundColor: 0xf8fafc, // Crisp off-white (Slate 50)
+    edgeColor: 0x0f172a, // Very dark slate (almost black) for connections
+    ambientDustColor: 0x94a3b8, // Visible mid-grey dust (Slate 400)
+    hubDustColor: 0x0ea5e9, // Bright sky blue for hub focus (Sky 500)
+    ambientDustOpacity: 0.6, // Transparent enough to be subtle
+    nodeTextDimmed: '#94a3b8'
   }
 };
 
@@ -128,7 +128,7 @@ let wooshLowpass: BiquadFilterNode | null = null;
 let previousCameraPos = new THREE.Vector3();
 let smoothedSpeed = 0;
 
-// Fly-to Animation State
+// --- Fly-to Animation State ---
 let isFlying = false;
 let targetCameraPos = new THREE.Vector3();
 let targetControlsCenter = new THREE.Vector3();
@@ -1140,6 +1140,240 @@ function updateProximityLabels() {
 }
 
 
+function playStreamIntroAnimation(iframe: HTMLIFrameElement) {
+  // Hide iframe initially
+  iframe.style.opacity = '0';
+  iframe.style.transition = 'opacity 1.5s ease-in-out';
+
+  // Create canvas for particle effect inside videoWrapper
+  const oldCanvas = document.getElementById('stream-intro-canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  const canvas = document.createElement('canvas');
+  canvas.id = 'stream-intro-canvas';
+  canvas.style.position = 'absolute';
+  canvas.style.top = '0';
+  canvas.style.left = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.zIndex = '50'; // Below iframe 
+  canvas.style.pointerEvents = 'none';
+  canvas.style.borderRadius = '0 0 12px 12px';
+  videoWrapper.appendChild(canvas);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    iframe.style.opacity = '1';
+    return;
+  }
+
+  // Handle resizing
+  const rect = videoWrapper.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+
+  // Particle System
+  const particles: any[] = [];
+  const numParticles = 80;
+  for (let i = 0; i < numParticles; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      radius: Math.random() * 2 + 1,
+      target: {
+        x: canvas.width / 2 + (Math.random() - 0.5) * 50,
+        y: canvas.height / 2 + (Math.random() - 0.5) * 50
+      }
+    });
+  }
+
+  let startTime = Date.now();
+
+  function animateCanvas() {
+    if (!ctx) return;
+    const now = Date.now();
+    const elapsed = now - startTime;
+    // 2.5 seconds total intro
+    const progress = Math.min(elapsed / 2500, 1.0);
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Smooth transition: 
+    // 0 -> 0.6: particles float and connect
+    // 0.6 -> 1.0: converge to center
+    const convergePhase = Math.max(0, (progress - 0.6) / 0.4);
+
+    // Draw connecting lines
+    ctx.strokeStyle = `rgba(68, 136, 255, ${0.5 * (1 - convergePhase)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 60) {
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+        }
+      }
+    }
+    ctx.stroke();
+
+    // Update and draw particles
+    ctx.fillStyle = `rgba(136, 170, 255, ${0.8 * (1 - convergePhase)})`;
+    for (const p of particles) {
+      if (convergePhase === 0) {
+        // Float around
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Bounce off walls
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+      } else {
+        // Converge to center rapidly
+        // Easing to target
+        p.x += (p.target.x - p.x) * 0.15;
+        p.y += (p.target.y - p.y) * 0.15;
+      }
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (progress < 1.0) {
+      requestAnimationFrame(animateCanvas);
+      // Midway fade in the video wrapper
+      if (progress > 0.7 && iframe.style.opacity === '0') {
+        iframe.style.opacity = '1';
+      }
+    } else {
+      iframe.style.opacity = '1';
+      // Fade out canvas
+      canvas.style.transition = 'opacity 0.5s';
+      canvas.style.opacity = '0';
+      setTimeout(() => {
+        if (videoWrapper.contains(canvas)) videoWrapper.removeChild(canvas);
+      }, 500);
+    }
+  }
+
+  animateCanvas();
+}
+
+function playStreamOutroAnimation(iframe: HTMLIFrameElement, onComplete: () => void) {
+  // Fade out iframe
+  iframe.style.transition = 'opacity 0.8s ease-in-out';
+  iframe.style.opacity = '0';
+
+  const oldCanvas = document.getElementById('stream-outro-canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  const canvas = document.createElement('canvas');
+  canvas.id = 'stream-outro-canvas';
+  canvas.style.position = 'absolute';
+  canvas.style.top = '0';
+  canvas.style.left = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.zIndex = '52'; // Above iframe to hide it
+  canvas.style.pointerEvents = 'none';
+  canvas.style.borderRadius = '0 0 12px 12px';
+  videoWrapper.appendChild(canvas);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    onComplete();
+    return;
+  }
+
+  const rect = videoWrapper.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+
+  const particles: any[] = [];
+  const numParticles = 80;
+  for (let i = 0; i < numParticles; i++) {
+    // Start scattered
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5),
+      vy: (Math.random() - 0.5),
+      radius: Math.random() * 2 + 1
+    });
+  }
+
+  let startTime = Date.now();
+
+  function animateCanvas() {
+    if (!ctx) return;
+    const now = Date.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / 1200, 1.0); // 1.2 seconds outro
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Target center
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    const convergePhase = progress;
+
+    ctx.strokeStyle = `rgba(68, 136, 255, ${0.8 * convergePhase})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        if (dx * dx + dy * dy < 6400) { // Connect if < 80px
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+        }
+      }
+    }
+    ctx.stroke();
+
+    // Fade out completely at the very end
+    const alpha = progress > 0.9 ? 1.0 - ((progress - 0.9) * 10) : 1.0;
+
+    ctx.fillStyle = `rgba(136, 170, 255, ${1.0 * convergePhase * alpha})`;
+    for (const p of particles) {
+      // Accelerate towards center
+      p.vx += (cx - p.x) * 0.08 * convergePhase;
+      p.vy += (cy - p.y) * 0.08 * convergePhase;
+
+      // Add friction
+      p.vx *= 0.85;
+      p.vy *= 0.85;
+
+      p.x += p.vx;
+      p.y += p.vy;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (progress < 1.0) {
+      requestAnimationFrame(animateCanvas);
+    } else {
+      setTimeout(() => {
+        if (videoWrapper.contains(canvas)) videoWrapper.removeChild(canvas);
+        onComplete();
+      }, 50);
+    }
+  }
+
+  animateCanvas();
+}
+
 function openVideoPanel(nodeIdStr: string) {
   const iframe = ytManager.getIframe(nodeIdStr);
   if (!iframe) return;
@@ -1167,6 +1401,9 @@ function openVideoPanel(nodeIdStr: string) {
   // Overlay the iframe on top of the video-wrapper using CSS positioning
   // (instead of moving it in the DOM, which would reload the iframe and break playback)
   syncIframeToWrapper(iframe);
+
+  // Play particle intro animation
+  playStreamIntroAnimation(iframe);
 }
 
 /**
@@ -1181,8 +1418,7 @@ function syncIframeToWrapper(iframe: HTMLIFrameElement) {
   iframe.style.width = rect.width + 'px';
   iframe.style.height = rect.height + 'px';
   iframe.style.zIndex = '51';
-  iframe.style.opacity = '1';
-  iframe.style.pointerEvents = 'auto';
+  iframe.style.pointerEvents = 'none'; // Preclude interactions like pausing or revealing controls
   iframe.style.borderRadius = '0 0 12px 12px';
 }
 
@@ -1261,12 +1497,22 @@ function toggleVideoExpand() {
 }
 
 function closeVideoPanel() {
-  // Reset iframe styles back to hidden
   if (focusedNodeId !== null) {
     const iframe = ytManager.getIframe(focusedNodeId.toString());
-    if (iframe) {
-      resetIframeStyles(iframe);
+    if (iframe && isVideoPanelOpen) {
+      // Play outro animation before actually closing the panel
+      playStreamOutroAnimation(iframe, () => {
+        finishCloseVideoPanel(iframe);
+      });
+      return;
     }
+  }
+  finishCloseVideoPanel(null);
+}
+
+function finishCloseVideoPanel(iframe: HTMLIFrameElement | null) {
+  if (iframe) {
+    resetIframeStyles(iframe);
   }
   videoPanelContainer.classList.add('hidden');
   videoPanelContainer.classList.remove('expanded');
