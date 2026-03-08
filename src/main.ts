@@ -16,7 +16,8 @@ const THEMES = {
     ambientDustColor: 0x7777ff,
     hubDustColor: 0x7777ff,
     ambientDustOpacity: 0.4,
-    nodeTextDimmed: '#666677'
+    nodeTextDimmed: '#666677',
+    asteroidColor: 0x555577
   },
   light: {
     backgroundColor: 0xf8fafc, // Crisp off-white (Slate 50)
@@ -24,7 +25,8 @@ const THEMES = {
     ambientDustColor: 0x94a3b8, // Visible mid-grey dust (Slate 400)
     hubDustColor: 0x0ea5e9, // Bright sky blue for hub focus (Sky 500)
     ambientDustOpacity: 0.6, // Transparent enough to be subtle
-    nodeTextDimmed: '#94a3b8'
+    nodeTextDimmed: '#94a3b8',
+    asteroidColor: 0x000000
   }
 };
 
@@ -59,6 +61,7 @@ let edgesLine: THREE.LineSegments;
 let hubDustPoints: THREE.Points;
 let ambientDustPoints: THREE.Points;
 let boundsSphere: THREE.Mesh;
+let asteroidsMesh: THREE.InstancedMesh;
 
 // Per-dust-particle data for hub-anchored positioning
 let hubDustHubIndices: Int32Array; // Index into graphData.nodes for each hub dust particle
@@ -91,12 +94,20 @@ const closeVideoBtn = document.getElementById('close-video-btn') as HTMLButtonEl
 const expandVideoBtn = document.getElementById('expand-video-btn') as HTMLButtonElement;
 const glcanvas = document.getElementById('glcanvas') as HTMLCanvasElement;
 
+// Deep Dive panel elements
+const deepDivePanel = document.getElementById('deep-dive-panel') as HTMLDivElement;
+const deepDiveTitle = document.getElementById('deep-dive-title') as HTMLHeadingElement;
+const deepDiveArticles = document.getElementById('deep-dive-articles') as HTMLUListElement;
+const deepDiveCloseBtn = document.getElementById('deep-dive-close-btn') as HTMLButtonElement;
+
 let searchTerm: string = '';
 
 // UI state
 let isSourcesPanelOpen = false;
 let isVideoPanelOpen = false;
 let isVideoExpanded = false;
+let isDeepDiveOpen = false;
+let pendingDeepDive = false; // Flag to auto-trigger deep dive after fly-in
 
 let audioListener: THREE.AudioListener;
 let targetMasterVolume = 0.3; // matches new default
@@ -128,6 +139,17 @@ let wooshLowpass: BiquadFilterNode | null = null;
 let previousCameraPos = new THREE.Vector3();
 let smoothedSpeed = 0;
 
+// --- Spatial Audio Cue Layer ---
+// Per-stream oscillator + StereoPanner + Gain for directional presence cues
+interface SpatialCueNode {
+  oscillator: OscillatorNode;
+  panner: StereoPannerNode;
+  gain: GainNode;
+  filter: BiquadFilterNode;
+}
+const spatialCueNodes: Map<string, SpatialCueNode> = new Map();
+let spatialCuesInitialized = false;
+
 // --- Fly-to Animation State ---
 let isFlying = false;
 let targetCameraPos = new THREE.Vector3();
@@ -148,7 +170,7 @@ function init() {
 
   // Camera - start outside the bounding sphere
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
-  camera.position.set(300, 400, 900);
+  camera.position.set(500, 700, 1600);
 
   // Audio Setup (Three.js AudioListener for woosh only)
   audioListener = new THREE.AudioListener();
@@ -185,6 +207,7 @@ function init() {
   createNodes();
   createEdges();
   createDust();
+  createAsteroids();
 
   // Events
   window.addEventListener('resize', onWindowResize);
@@ -262,6 +285,14 @@ function init() {
         edgeMat.linewidth = currentTheme === 'light' ? 2 : 1;
       }
 
+      if (asteroidsMesh) {
+        const mat = asteroidsMesh.material as THREE.MeshBasicMaterial;
+        mat.color.setHex(themeConfig.asteroidColor);
+        mat.wireframe = currentTheme === 'light';
+        mat.opacity = currentTheme === 'light' ? 0.3 : 0.6;
+        mat.blending = currentTheme === 'light' ? THREE.NormalBlending : THREE.AdditiveBlending;
+      }
+
       // Update wireframe sphere
       if (boundsSphere) {
         const mat = boundsSphere.material as THREE.MeshBasicMaterial;
@@ -337,6 +368,12 @@ function init() {
   expandVideoBtn.addEventListener('click', () => {
     toggleVideoExpand();
   });
+
+  // Deep Dive close button
+  deepDiveCloseBtn.addEventListener('click', () => {
+    exitFocusMode();
+  });
+
 
   // Landing Page Enter Button
   const enterBtn = document.getElementById('enter-btn');
@@ -565,6 +602,82 @@ function setupYouTubeAudio(node: GraphNode) {
 }
 
 /**
+ * Compute stereo pan value for a node based on its position relative to the camera.
+ * Returns -1 (hard left) to +1 (hard right), 0 = center.
+ */
+function computeStereoPan(nodePos: THREE.Vector3): number {
+  // Get camera's right vector from its world matrix
+  const cameraRight = new THREE.Vector3();
+  cameraRight.setFromMatrixColumn(camera.matrixWorld, 0); // Column 0 = right axis
+  cameraRight.normalize();
+
+  // Vector from camera to node
+  const toNode = new THREE.Vector3().subVectors(nodePos, camera.position);
+
+  // Project onto the right axis — positive = right, negative = left
+  const dot = toNode.dot(cameraRight);
+
+  // Normalize: use the distance to the node so angular position matters, not distance
+  const dist = toNode.length();
+  if (dist < 0.01) return 0; // Node is at camera position
+
+  // The dot/dist gives cos(angle) from the right axis, which ranges [-1, 1]
+  // Clamp and apply a slight curve to keep it feeling natural
+  const rawPan = Math.max(-1, Math.min(1, dot / dist));
+
+  // Apply a gentle curve: exaggerate center, flatten extremes for smoother feel
+  return rawPan * 0.85; // Cap at ±0.85 to avoid jarring hard-pans
+}
+
+/**
+ * Initialize the spatial audio cue layer — one quiet oscillator per stream
+ * routed through a StereoPannerNode for real directional audio cues.
+ * Must be called after AudioContext is resumed (user gesture).
+ */
+function initSpatialCues() {
+  if (spatialCuesInitialized) return;
+  const ctx = audioListener.context;
+  if (ctx.state !== 'running') return; // Wait until context is active
+
+  const nodeIds = ytManager.getNodeIds();
+  nodeIds.forEach((nodeId, index) => {
+    // Create a unique low-frequency tone per stream (spaced across 80-200 Hz)
+    const baseFreq = 80 + (index * 17) % 120;
+
+    const oscillator = ctx.createOscillator();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = baseFreq;
+
+    // Lowpass filter to make the tone very soft and ambient
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 150;
+    filter.Q.value = 0.5;
+
+    // Stereo panner — the star of the show
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = 0;
+
+    // Gain node — starts silent, driven by spatial proximity
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+
+    // Pipeline: oscillator -> filter -> panner -> gain -> destination
+    oscillator.connect(filter);
+    filter.connect(panner);
+    panner.connect(gain);
+    gain.connect(audioListener.getInput());
+
+    oscillator.start();
+
+    spatialCueNodes.set(nodeId, { oscillator, panner, gain, filter });
+  });
+
+  spatialCuesInitialized = true;
+  console.log(`[Spatial] Initialized ${nodeIds.length} spatial audio cues`);
+}
+
+/**
  * Generate procedural frequency data that looks organic and alive.
  * Uses simplex noise and time-based oscillation to simulate audio-reactive visuals.
  */
@@ -737,6 +850,63 @@ function createDust() {
 
   ambientDustPoints = new THREE.Points(ambientDustGeo, ambientDustMat);
   scene.add(ambientDustPoints);
+}
+
+function createAsteroids() {
+  const asteroidCount = 1200;
+  // Dodecahedron provides a perfect low-poly 'asteroid rock' geometry
+  const geometry = new THREE.DodecahedronGeometry(1.5, 0);
+
+  const material = new THREE.MeshBasicMaterial({
+    color: THEMES[currentTheme].asteroidColor,
+    wireframe: currentTheme === 'light',
+    transparent: true,
+    opacity: currentTheme === 'light' ? 0.3 : 0.6,
+    depthWrite: false, // Blends nicely with glowing elements behind
+    blending: currentTheme === 'light' ? THREE.NormalBlending : THREE.AdditiveBlending
+  });
+
+  asteroidsMesh = new THREE.InstancedMesh(geometry, material, asteroidCount);
+
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Euler();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+
+  for (let i = 0; i < asteroidCount; i++) {
+    // Distribute randomly between radius 500 and 900 (Bounding sphere is 350)
+    const radius = 500 + Math.random() * 400;
+    const angle = Math.random() * Math.PI * 2;
+    // Y-axis variance gives the belt thickness
+    const y = (Math.random() - 0.5) * 120;
+
+    position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+
+    // Random spin
+    rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    quaternion.setFromEuler(rotation);
+
+    // Varied scales: big rocks, small pebbles
+    const s = Math.random() * 5 + 1;
+    scale.set(s, s, s);
+
+    matrix.compose(position, quaternion, scale);
+    asteroidsMesh.setMatrixAt(i, matrix);
+
+    // Very subtle color variations to make rocks unique
+    const colorVariation = new THREE.Color(0x8888aa).multiplyScalar(0.5 + Math.random() * 0.5);
+    asteroidsMesh.setColorAt(i, colorVariation);
+  }
+
+  // Tilt the belt orbit slightly for a dramatic dynamic effect
+  asteroidsMesh.rotation.x = 0.15;
+  asteroidsMesh.rotation.z = -0.1;
+
+  asteroidsMesh.instanceMatrix.needsUpdate = true;
+  if (asteroidsMesh.instanceColor) asteroidsMesh.instanceColor.needsUpdate = true;
+
+  scene.add(asteroidsMesh);
 }
 
 function onWindowResize() {
@@ -1473,7 +1643,8 @@ function resetIframeStyles(iframe: HTMLIFrameElement) {
 }
 
 /**
- * Position the compact video panel to the right of the focused hub in screen space.
+ * Position the compact video panel near the focused hub in screen space.
+ * When the deep-dive detail panel is open (right side), bias the video to the left.
  */
 function positionPanelNearHub() {
   if (focusedNodeId === null || isVideoExpanded) return;
@@ -1487,17 +1658,30 @@ function positionPanelNearHub() {
   const screenX = (v.x * halfW) + halfW;
   const screenY = -(v.y * halfH) + halfH;
 
-  // Place panel to the right of the hub, offset by 60px
-  let panelLeft = screenX + 60;
-  let panelTop = screenY - 140; // Center vertically on the hub
-
   const panelW = 420;
   const panelH = 280;
 
-  // Clamp so the panel stays on screen
-  if (panelLeft + panelW > window.innerWidth - 20) {
-    panelLeft = screenX - panelW - 60; // Flip to left side
+  let panelLeft: number;
+  let panelTop = screenY - 140; // Center vertically on the hub
+
+  if (isDeepDiveOpen) {
+    // Deep-dive panel is on the right — place video to the LEFT of the hub
+    panelLeft = screenX - panelW - 60;
+    // If that goes off-screen left, clamp to left edge
+    if (panelLeft < 20) panelLeft = 20;
+    // Extra safety: don't overlap the deep-dive panel (right side, 320px wide + 20px margin)
+    const maxRight = window.innerWidth - 320 - 40;
+    if (panelLeft + panelW > maxRight) {
+      panelLeft = maxRight - panelW;
+    }
+  } else {
+    // Default: place to the right of the hub
+    panelLeft = screenX + 60;
+    if (panelLeft + panelW > window.innerWidth - 20) {
+      panelLeft = screenX - panelW - 60; // Flip to left side
+    }
   }
+
   if (panelLeft < 20) panelLeft = 20;
   if (panelTop < 20) panelTop = 20;
   if (panelTop + panelH > window.innerHeight - 80) {
@@ -1559,12 +1743,77 @@ function finishCloseVideoPanel(iframe: HTMLIFrameElement | null) {
   expandVideoBtn.title = 'Expand';
 }
 
+/**
+ * Open the Deep Dive experience for a focused StreamHub node.
+ * Shows the detail panel, auto-opens the video, and dims the constellation.
+ */
+function openDeepDive(nodeId: number) {
+  const node = graphData.nodes[nodeId];
+  if (!node || node.type !== NodeType.StreamHub) return;
+
+  // Populate the detail panel
+  deepDiveTitle.textContent = node.text;
+
+  // Find connected Article nodes and list their headlines
+  deepDiveArticles.innerHTML = '';
+  const connectedArticles: GraphNode[] = [];
+  for (const connId of node.connections) {
+    const connNode = graphData.nodes[connId];
+    if (connNode && connNode.type === NodeType.Article) {
+      connectedArticles.push(connNode);
+    }
+  }
+
+  // Also gather articles connected to those articles (2nd degree) for richer content
+  const articleIds = new Set(connectedArticles.map(a => a.id));
+  for (const article of connectedArticles) {
+    for (const connId of article.connections) {
+      const connNode = graphData.nodes[connId];
+      if (connNode && connNode.type === NodeType.Article && !articleIds.has(connNode.id)) {
+        connectedArticles.push(connNode);
+        articleIds.add(connNode.id);
+        if (connectedArticles.length >= 20) break; // Cap at 20 headlines
+      }
+    }
+    if (connectedArticles.length >= 20) break;
+  }
+
+  for (const article of connectedArticles.slice(0, 20)) {
+    const li = document.createElement('li');
+    li.textContent = article.text;
+    li.addEventListener('click', () => {
+      flyToNode(article.id);
+    });
+    deepDiveArticles.appendChild(li);
+  }
+
+  // Show the deep dive panel
+  deepDivePanel.classList.remove('hidden');
+  isDeepDiveOpen = true;
+
+  // Dim the constellation
+  glcanvas.classList.add('constellation-dimmed');
+}
+
+/**
+ * Close the deep dive detail panel.
+ */
+function closeDeepDive() {
+  deepDivePanel.classList.add('hidden');
+  isDeepDiveOpen = false;
+  glcanvas.classList.remove('constellation-dimmed');
+}
+
 function exitFocusMode() {
   if (isVideoPanelOpen) {
     closeVideoPanel();
   }
 
+  // Close deep dive panel
+  closeDeepDive();
+
   focusedNodeId = null;
+  pendingDeepDive = false;
 
   // Fade all YouTube streams back to full volume
   ytManager.getNodeIds().forEach(nodeId => {
@@ -1586,6 +1835,14 @@ function flyToNode(nodeId: number) {
 
   // If focusing on a StreamHub, initiate Audio Focus Mode
   if (node.type === NodeType.StreamHub) {
+    // If already in deep-dive for another node, close it first
+    if (isDeepDiveOpen) {
+      closeDeepDive();
+      if (isVideoPanelOpen) {
+        closeVideoPanel();
+      }
+    }
+
     focusedNodeId = nodeId;
 
     // Set fade targets: focused source stays full, others fade out
@@ -1599,6 +1856,9 @@ function flyToNode(nodeId: number) {
 
     // Show focus buttons ("Watch Stream" and "Exit Focus")
     focusButtonsContainer.classList.remove('hidden');
+
+    // Set flag to auto-trigger deep dive when camera arrives
+    pendingDeepDive = true;
   } else {
     // If we click on an Article, clear focus
     exitFocusMode();
@@ -1646,6 +1906,8 @@ function onDoubleClick() {
   }
 }
 
+
+
 function animate(time: number) {
   requestAnimationFrame(animate);
 
@@ -1686,6 +1948,10 @@ function animate(time: number) {
   updateInteraction();
   updateProximityLabels();
 
+  if (asteroidsMesh) {
+    asteroidsMesh.rotation.y = time * 0.00003; // Give the entire asteroid belt a slow, steady orbit
+  }
+
   // Track the video panel and iframe position each frame
   if (isVideoPanelOpen && focusedNodeId !== null) {
     if (!isVideoExpanded) {
@@ -1701,10 +1967,16 @@ function animate(time: number) {
   // --- Per-player spatial volume (YouTube IFrame API) ---
   // Compute volume for each YouTube stream based on camera distance to its node.
   {
+    // Lazily initialize spatial cue oscillators (needs active AudioContext)
+    if (!spatialCuesInitialized && isAudioActive) {
+      initSpatialCues();
+    }
+
     let globalEnvelope = 0.0;
 
     if (isAudioActive && !isMuted) {
       if (focusedNodeId !== null) {
+        // In focus mode, keep full volume (fades handle per-node control)
         globalEnvelope = targetMasterVolume;
       } else {
         const camDist = camera.position.length();
@@ -1720,9 +1992,9 @@ function animate(time: number) {
       }
     }
 
-    // Smooth the global envelope
-    if (Math.abs(currentMasterVolume - globalEnvelope) > 0.001) {
-      currentMasterVolume += (globalEnvelope - currentMasterVolume) * 0.005;
+    // Smooth the global envelope (0.02 factor ≈ gentle ~1s ramp at 60fps)
+    if (Math.abs(currentMasterVolume - globalEnvelope) > 0.0005) {
+      currentMasterVolume += (globalEnvelope - currentMasterVolume) * 0.02;
     } else {
       currentMasterVolume = globalEnvelope;
     }
@@ -1734,11 +2006,11 @@ function animate(time: number) {
       // Focus-mode fade target
       const fadeTarget = audioFadeTargets.get(nodeId) ?? 1.0;
 
-      // Smooth fade toward target
+      // Smooth fade toward target (0.012 factor ≈ gradual ~3s swell at 60fps)
       const currentFade = audioFadeCurrents.get(nodeId) ?? 0.0;
       let newFade = currentFade;
-      if (Math.abs(currentFade - fadeTarget) > 0.005) {
-        newFade = currentFade + (fadeTarget - currentFade) * 0.03;
+      if (Math.abs(currentFade - fadeTarget) > 0.003) {
+        newFade = currentFade + (fadeTarget - currentFade) * 0.012;
       } else {
         newFade = fadeTarget;
       }
@@ -1759,13 +2031,41 @@ function animate(time: number) {
         }
       }
 
+      // --- Stereo Pan & Volume Biasing ---
+      let stereoPan = 0;
+      if (nodePos) {
+        stereoPan = computeStereoPan(nodePos);
+      }
+
+      // Apply volume bias: nodes on the left get a slight boost, right gets slight cut
+      // This creates spatial separation even though YouTube audio is mono-controlled
+      // Pan range is [-0.85, 0.85], bias range is [0.87, 1.13]
+      const volumeBias = 1.0 + (stereoPan * -0.15);
+
       // Compute final volume (0-100 for YouTube API)
       // When muted or inactive, force volume to 0 — setVolume handles muting
       let finalVol = 0;
       if (isAudioActive && !isMuted) {
-        finalVol = Math.max(0, Math.min(100, Math.round(currentMasterVolume * spatialGain * newFade * 100)));
+        finalVol = Math.max(0, Math.min(100, Math.round(
+          currentMasterVolume * spatialGain * newFade * volumeBias * 100
+        )));
       }
       ytManager.setVolume(nodeId, finalVol);
+
+      // --- Update Spatial Audio Cue ---
+      const cue = spatialCueNodes.get(nodeId);
+      if (cue) {
+        // Set real stereo panner position
+        cue.panner.pan.value += (stereoPan - cue.panner.pan.value) * 0.1;
+
+        // Cue volume: very quiet, proportional to proximity — only audible when close
+        // Scale with master volume and spatial gain for consistency
+        let cueVol = 0;
+        if (isAudioActive && !isMuted) {
+          cueVol = currentMasterVolume * spatialGain * newFade * 0.04; // Very subtle
+        }
+        cue.gain.gain.value += (cueVol - cue.gain.gain.value) * 0.08;
+      }
     });
   }
 
@@ -1782,6 +2082,12 @@ function animate(time: number) {
     if (camera.position.distanceToSquared(targetCameraPos) < 25.0 &&
       controls.target.distanceToSquared(targetControlsCenter) < 25.0) {
       isFlying = false;
+
+      // Auto-trigger deep dive when camera arrives at a StreamHub
+      if (pendingDeepDive && focusedNodeId !== null) {
+        pendingDeepDive = false;
+        openDeepDive(focusedNodeId);
+      }
     }
 
     // Restore autoRotate if it was globally enabled

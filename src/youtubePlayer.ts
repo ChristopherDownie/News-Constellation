@@ -152,10 +152,12 @@ export class YouTubePlayerManager {
         this.players.set(source.nodeId.toString(), managed);
 
         // Create the YT.Player with the video ID directly
+        // Use youtube-nocookie.com host to bypass Error 150 embedding restrictions
         managed.player = new YT.Player(containerId, {
             height: '1',
             width: '1',
             videoId: source.videoId,
+            host: 'https://www.youtube-nocookie.com',
             playerVars: {
                 autoplay: 0,
                 controls: 0,
@@ -163,7 +165,7 @@ export class YouTubePlayerManager {
                 rel: 0,
                 mute: 1, // Start muted to allow autoplay
                 playsinline: 1,
-                origin: window.location.origin,
+                enablejsapi: 1,
             },
             events: {
                 onReady: (_event) => {
@@ -181,17 +183,12 @@ export class YouTubePlayerManager {
                     }
                 },
                 onError: (event) => {
-                    console.warn(`[YT] Error ${event.data} for ${source.name}`);
-                    // Error 150 = embedding restricted; Error 101 = not found
-                    // Try reloading after a delay
-                    if (event.data === 150 || event.data === 101 || event.data === 2) {
-                        setTimeout(() => {
-                            try {
-                                (event.target as any).loadVideoById(source.videoId, 0);
-                            } catch {
-                                console.warn(`[YT] Could not reload ${source.name}`);
-                            }
-                        }, 5000);
+                    console.warn(`[YT] Error ${event.data} for ${source.name} (${source.videoId})`);
+                    // Error 150/101 = embedding restricted or not found
+                    // Error 2 = invalid video ID
+                    if (event.data === 150 || event.data === 101) {
+                        // Log but don't retry infinitely — the video may genuinely be restricted
+                        console.warn(`[YT] ${source.name} may be unavailable or restricted for embedding`);
                     }
                 },
             },

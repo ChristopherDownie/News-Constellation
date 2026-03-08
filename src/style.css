@@ -883,11 +883,19 @@ body.light-theme input[type=range]::-webkit-slider-runnable-track {
 }
 
 @keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
-#watch-stream-btn, #focus-exit-btn {
+#watch-stream-btn,
+#focus-exit-btn {
   background: rgba(7, 11, 25, 0.7);
   border: 1px solid rgba(68, 136, 255, 0.5);
   color: #fff;
@@ -904,19 +912,22 @@ body.light-theme input[type=range]::-webkit-slider-runnable-track {
   letter-spacing: 0.5px;
 }
 
-body.light-theme #watch-stream-btn, body.light-theme #focus-exit-btn {
+body.light-theme #watch-stream-btn,
+body.light-theme #focus-exit-btn {
   background: rgba(255, 255, 255, 0.8);
   color: #222;
   border-color: rgba(0, 0, 0, 0.15);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
-#watch-stream-btn:hover, #focus-exit-btn:hover {
+#watch-stream-btn:hover,
+#focus-exit-btn:hover {
   transform: translateY(-3px);
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6), 0 0 20px rgba(68, 136, 255, 0.5);
 }
 
-body.light-theme #watch-stream-btn:hover, body.light-theme #focus-exit-btn:hover {
+body.light-theme #watch-stream-btn:hover,
+body.light-theme #focus-exit-btn:hover {
   background: rgba(0, 0, 0, 0.05);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
@@ -925,6 +936,7 @@ body.light-theme #watch-stream-btn:hover, body.light-theme #focus-exit-btn:hover
   border-color: #00e5cc;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 229, 204, 0.2);
 }
+
 #watch-stream-btn:hover {
   background: rgba(0, 229, 204, 0.15);
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 204, 0.5);
@@ -933,6 +945,7 @@ body.light-theme #watch-stream-btn:hover, body.light-theme #focus-exit-btn:hover
 #focus-exit-btn {
   border-color: rgba(255, 34, 102, 0.5);
 }
+
 #focus-exit-btn:hover {
   background: rgba(255, 34, 102, 0.15);
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 34, 102, 0.4);
@@ -957,11 +970,11 @@ body.light-theme #watch-stream-btn:hover, body.light-theme #focus-exit-btn:hover
   opacity: 1;
   pointer-events: auto;
   transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              top 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              left 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.35s ease,
-              border-radius 0.4s ease;
+    height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    top 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    left 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.35s ease,
+    border-radius 0.4s ease;
   animation: panelSlideIn 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -970,6 +983,7 @@ body.light-theme #watch-stream-btn:hover, body.light-theme #focus-exit-btn:hover
     opacity: 0;
     transform: scale(0.88) translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -1039,7 +1053,8 @@ body.light-theme #video-panel-title {
   align-items: center;
 }
 
-#close-video-btn, #expand-video-btn {
+#close-video-btn,
+#expand-video-btn {
   background: rgba(255, 255, 255, 0.08);
   border: none;
   color: rgba(255, 255, 255, 0.7);
@@ -1054,7 +1069,8 @@ body.light-theme #video-panel-title {
   transition: background 0.2s, color 0.2s;
 }
 
-body.light-theme #close-video-btn, body.light-theme #expand-video-btn {
+body.light-theme #close-video-btn,
+body.light-theme #expand-video-btn {
   background: rgba(0, 0, 0, 0.05);
   color: #555;
 }
@@ -1105,4 +1121,232 @@ body.light-theme #close-video-btn, body.light-theme #expand-video-btn {
 
 body.light-theme #glcanvas.bg-blurred {
   filter: blur(12px) brightness(0.9);
+}
+
+/* Constellation dimming during focus mode */
+#glcanvas.constellation-dimmed {
+  filter: brightness(0.55) saturate(0.4);
+}
+
+body.light-theme #glcanvas.constellation-dimmed {
+  filter: brightness(0.75) saturate(0.5);
+}
+
+/* When both dimmed and blurred (deep dive + video open) */
+#glcanvas.constellation-dimmed.bg-blurred {
+  filter: blur(10px) brightness(0.4) saturate(0.3);
+}
+
+body.light-theme #glcanvas.constellation-dimmed.bg-blurred {
+  filter: blur(10px) brightness(0.65) saturate(0.4);
+}
+
+/* --- Deep Dive Detail Panel --- */
+#deep-dive-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  max-height: calc(100vh - 100px);
+  background: rgba(8, 12, 28, 0.82);
+  border: 1px solid rgba(100, 150, 255, 0.25);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(68, 136, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: deepDiveSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+body.light-theme #deep-dive-panel {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+}
+
+#deep-dive-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(30px);
+  animation: none;
+}
+
+@keyframes deepDiveSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.deep-dive-header {
+  padding: 14px 16px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+body.light-theme .deep-dive-header {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.deep-dive-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.deep-dive-live-badge {
+  background: #ff2266;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+#deep-dive-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.light-theme #deep-dive-title {
+  color: #222;
+}
+
+#deep-dive-close-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+body.light-theme #deep-dive-close-btn {
+  background: rgba(0, 0, 0, 0.04);
+  color: #888;
+}
+
+#deep-dive-close-btn:hover {
+  background: rgba(255, 50, 50, 0.4);
+  color: #fff;
+}
+
+.deep-dive-section {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.deep-dive-section-title {
+  margin: 0 0 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: rgba(136, 170, 221, 0.6);
+}
+
+body.light-theme .deep-dive-section-title {
+  color: rgba(100, 100, 120, 0.7);
+}
+
+#deep-dive-articles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#deep-dive-articles li {
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: rgba(200, 220, 255, 0.75);
+  font-weight: 300;
+  letter-spacing: 0.2px;
+  line-height: 1.4;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  border-left: 2px solid transparent;
+}
+
+body.light-theme #deep-dive-articles li {
+  color: #555;
+}
+
+#deep-dive-articles li:hover {
+  background: rgba(68, 136, 255, 0.12);
+  color: #fff;
+  border-left-color: rgba(68, 136, 255, 0.6);
+}
+
+body.light-theme #deep-dive-articles li:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #222;
+  border-left-color: rgba(0, 0, 0, 0.3);
+}
+
+/* Scrollbar for deep dive articles */
+.deep-dive-section::-webkit-scrollbar {
+  width: 4px;
+}
+
+.deep-dive-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.deep-dive-section::-webkit-scrollbar-thumb {
+  background: rgba(68, 136, 255, 0.3);
+  border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+  #deep-dive-panel {
+    width: calc(100vw - 40px);
+    right: 20px;
+    top: auto;
+    bottom: 80px;
+    max-height: 40vh;
+  }
 }
