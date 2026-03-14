@@ -23,13 +23,14 @@ export class AudioVisualizer {
     private radius: number;
     private vertexSeeds: Float32Array;
     private vertexBandMap: Uint8Array;
+    private colorOverride: { solid: number; glow: number; solidLight?: number; glowLight?: number } | null;
 
     private baseSolidColor: THREE.Color = new THREE.Color();
     private baseGlowColor: THREE.Color = new THREE.Color();
     private intenseSolidColor: THREE.Color = new THREE.Color(0xff4422); // Orange/Red
     private intenseGlowColor: THREE.Color = new THREE.Color(0xff5533);
 
-    constructor(nodeSize: number, theme: 'dark' | 'light' = 'dark') {
+    constructor(nodeSize: number, theme: 'dark' | 'light' = 'dark', colorOverride?: { solid: number; glow: number; solidLight?: number; glowLight?: number }) {
         this.group = new THREE.Group();
         this.radius = Math.max(2, nodeSize * 0.8);
 
@@ -63,8 +64,13 @@ export class AudioVisualizer {
             this.vertexBandMap[i] = Math.abs(Math.floor(spatialHash * NUM_FREQUENCY_BANDS / (Math.PI * 2))) % NUM_FREQUENCY_BANDS;
         }
 
+        // Store color override for theme switching
+        this.colorOverride = colorOverride || null;
+
         // Solid surface material
-        const solidHex = theme === 'light' ? 0x333333 : 0x33ffaa;
+        const solidHex = colorOverride
+            ? (theme === 'light' ? (colorOverride.solidLight ?? colorOverride.solid) : colorOverride.solid)
+            : (theme === 'light' ? 0x333333 : 0x33ffaa);
         this.baseSolidColor.setHex(solidHex);
         const solidMaterial = new THREE.MeshBasicMaterial({
             color: this.baseSolidColor.clone(),
@@ -80,7 +86,9 @@ export class AudioVisualizer {
 
         // --- Outer glow halo ---
         const glowGeo = new THREE.SphereGeometry(this.radius * 1.15, 32, 24);
-        const glowHex = theme === 'light' ? 0x555555 : 0x66ffdd;
+        const glowHex = colorOverride
+            ? (theme === 'light' ? (colorOverride.glowLight ?? colorOverride.glow) : colorOverride.glow)
+            : (theme === 'light' ? 0x555555 : 0x66ffdd);
         this.baseGlowColor.setHex(glowHex);
         const glowMat = new THREE.MeshBasicMaterial({
             color: this.baseGlowColor.clone(),
@@ -180,14 +188,18 @@ export class AudioVisualizer {
     }
 
     setTheme(theme: 'dark' | 'light'): void {
-        const solidHex = theme === 'light' ? 0x333333 : 0x33ffaa;
+        const solidHex = this.colorOverride
+            ? (theme === 'light' ? (this.colorOverride.solidLight ?? this.colorOverride.solid) : this.colorOverride.solid)
+            : (theme === 'light' ? 0x333333 : 0x33ffaa);
         this.baseSolidColor.setHex(solidHex);
         const solidMat = this.solidMesh.material as THREE.MeshBasicMaterial;
         // Don't overwrite the current color entirely, just base, so lerp works
         solidMat.color.copy(this.baseSolidColor);
         solidMat.blending = theme === 'light' ? THREE.NormalBlending : THREE.AdditiveBlending;
 
-        const glowHex = theme === 'light' ? 0x555555 : 0x66ffdd;
+        const glowHex = this.colorOverride
+            ? (theme === 'light' ? (this.colorOverride.glowLight ?? this.colorOverride.glow) : this.colorOverride.glow)
+            : (theme === 'light' ? 0x555555 : 0x66ffdd);
         this.baseGlowColor.setHex(glowHex);
         const glowMat = this.glowMesh.material as THREE.MeshBasicMaterial;
         glowMat.color.copy(this.baseGlowColor);

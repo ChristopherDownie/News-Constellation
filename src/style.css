@@ -1452,3 +1452,332 @@ body.light-theme .transcript-line.interim {
     max-height: 40vh;
   }
 }
+
+/* ========================================================
+   HUB SWITCHER OVERLAY
+   ======================================================== */
+
+#hub-switcher-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 14, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#hub-switcher-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.light-theme #hub-switcher-overlay {
+  background: rgba(240, 242, 248, 0.88);
+}
+
+/* Close button */
+#hub-switcher-close {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #aabbdd;
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#hub-switcher-close:hover {
+  background: rgba(255, 68, 102, 0.15);
+  border-color: rgba(255, 68, 102, 0.4);
+  color: #ff4466;
+  transform: scale(1.1);
+}
+
+body.light-theme #hub-switcher-close {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #888;
+}
+
+body.light-theme #hub-switcher-close:hover {
+  background: rgba(255, 34, 102, 0.08);
+  color: #ff2266;
+}
+
+/* --- Left: Hub List --- */
+#hub-switcher-list {
+  flex: 1;
+  max-width: 60%;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 30px 40px 60px;
+  transform: translateX(-60px);
+  opacity: 0;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.1s,
+              opacity 0.5s ease 0.1s;
+}
+
+#hub-switcher-overlay.active #hub-switcher-list {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+#hub-switcher-list h2 {
+  margin: 0 0 24px 0;
+  font-size: 1.1rem;
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  color: #667799;
+}
+
+body.light-theme #hub-switcher-list h2 {
+  color: #999;
+}
+
+/* Grid */
+#hub-switcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 12px;
+  flex: 1;
+}
+
+#hub-switcher-grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+#hub-switcher-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 2px;
+}
+
+#hub-switcher-grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.25);
+  border-radius: 2px;
+}
+
+body.light-theme #hub-switcher-grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Hub Card */
+.hub-switcher-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 229, 255, 0.1);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+}
+
+#hub-switcher-overlay.active .hub-switcher-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.hub-switcher-card:hover {
+  background: rgba(0, 229, 255, 0.08);
+  border-color: rgba(0, 229, 255, 0.35);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.12),
+              0 0 30px rgba(0, 229, 255, 0.06);
+}
+
+body.light-theme .hub-switcher-card {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+body.light-theme .hub-switcher-card:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+.hub-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  flex-shrink: 0;
+}
+
+body.light-theme .hub-card-dot {
+  background: #0ea5e9;
+  box-shadow: 0 0 6px rgba(14, 165, 233, 0.3);
+}
+
+.hub-card-name {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: rgba(200, 220, 255, 0.85);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.light-theme .hub-card-name {
+  color: #444;
+}
+
+/* --- Right: Core Orb --- */
+#hub-switcher-core {
+  flex: 0 0 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  transform: translateX(80px);
+  opacity: 0;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s,
+              opacity 0.5s ease 0.2s;
+}
+
+#hub-switcher-overlay.active #hub-switcher-core {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+#hub-switcher-orb {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orb-center {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff6688, #ff2266, #cc1144);
+  box-shadow: 0 0 40px rgba(255, 34, 102, 0.5),
+              0 0 80px rgba(255, 34, 102, 0.2),
+              inset 0 0 15px rgba(255, 255, 255, 0.15);
+  animation: orbPulse 3s ease-in-out infinite;
+}
+
+body.light-theme .orb-center {
+  box-shadow: 0 0 30px rgba(255, 34, 102, 0.3),
+              0 0 60px rgba(255, 34, 102, 0.1);
+}
+
+.orb-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  margin-top: -60px;
+  margin-left: -60px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 34, 102, 0.2);
+  animation: orbRingSpin 8s linear infinite;
+}
+
+.orb-ring.ring-2 {
+  width: 160px;
+  height: 160px;
+  margin-top: -80px;
+  margin-left: -80px;
+  border-color: rgba(255, 34, 102, 0.1);
+  animation-duration: 12s;
+  animation-direction: reverse;
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes orbRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+#hub-switcher-core-label {
+  margin-top: 24px;
+  font-size: 0.85rem;
+  font-weight: 300;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(255, 136, 170, 0.6);
+}
+
+body.light-theme #hub-switcher-core-label {
+  color: rgba(204, 17, 68, 0.5);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  #hub-switcher-overlay {
+    flex-direction: column-reverse;
+  }
+
+  #hub-switcher-list {
+    max-width: 100%;
+    padding: 20px;
+    height: auto;
+    flex: 1;
+  }
+
+  #hub-switcher-core {
+    flex: 0 0 auto;
+    padding: 20px;
+  }
+
+  #hub-switcher-orb {
+    width: 100px;
+    height: 100px;
+  }
+
+  .orb-center {
+    width: 30px;
+    height: 30px;
+  }
+
+  .orb-ring {
+    width: 70px;
+    height: 70px;
+    margin-top: -35px;
+    margin-left: -35px;
+  }
+
+  .orb-ring.ring-2 {
+    width: 90px;
+    height: 90px;
+    margin-top: -45px;
+    margin-left: -45px;
+  }
+}

@@ -121,6 +121,12 @@ let isSourcesPanelOpen = false;
 let isVideoPanelOpen = false;
 let isVideoExpanded = false;
 let isDeepDiveOpen = false;
+let isHubSwitcherOpen = false;
+
+// Hub Switcher DOM elements
+const hubSwitcherOverlay = document.getElementById('hub-switcher-overlay') as HTMLDivElement;
+const hubSwitcherGrid = document.getElementById('hub-switcher-grid') as HTMLDivElement;
+const hubSwitcherCloseBtn = document.getElementById('hub-switcher-close') as HTMLButtonElement;
 
 
 let audioListener: THREE.AudioListener;
@@ -352,15 +358,22 @@ function init() {
     });
   }
 
-  // Escape key for Focus Mode / Video Mode
+  // Escape key for Focus Mode / Video Mode / Hub Switcher
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (isVideoPanelOpen) {
+      if (isHubSwitcherOpen) {
+        closeHubSwitcher();
+      } else if (isVideoPanelOpen) {
         closeVideoPanel();
       } else if (focusedNodeId !== null) {
         exitFocusMode();
       }
     }
+  });
+
+  // Hub Switcher close button
+  hubSwitcherCloseBtn.addEventListener('click', () => {
+    closeHubSwitcher();
   });
 
   // Interrupt flying on manual user interaction
@@ -534,6 +547,22 @@ function createNodes() {
       label.textContent = node.text;
       labelsContainer.appendChild(label);
       nodeLabels.set(node.id, label);
+    }
+
+    // Core node gets its own red visualizer (same wave animation, red color)
+    if (node.type === NodeType.Core) {
+      const coreVisualizer = new AudioVisualizer(node.size, currentTheme, {
+        solid: 0xff2266,    // Neon pinkish red
+        glow: 0xff4488,     // Softer pink glow
+        solidLight: 0xcc1144,
+        glowLight: 0xdd2255
+      });
+      coreVisualizer.setPosition(node.position);
+      scene.add(coreVisualizer.group);
+      audioVisualizers.set(node.id.toString(), coreVisualizer);
+
+      // Initialize procedural frequency data for Core too
+      proceduralFreqData.set(node.id.toString(), new Uint8Array(128));
     }
   }
 
@@ -1033,7 +1062,32 @@ function updatePhysics(time: number) {
   // Update node positions with drift
   for (let i = 0; i < graphData.nodes.length; i++) {
     const node = graphData.nodes[i];
-    if (node.type === NodeType.Core) continue; // Keep central steady
+
+    // Core node stays fixed but still gets its visualizer updated
+    if (node.type === NodeType.Core) {
+      // Generate procedural frequency data for the Core hub (ambient energy)
+      const tensionNoise = noise3D(0.5, 0.5, time * 0.00005);
+      const coreEnergy = Math.max(0, Math.min(1, (tensionNoise * 1.2) + 0.3)); // Biased slightly higher for always-alive feel
+      node.energyLevel = (node.energyLevel || 0) + (coreEnergy - (node.energyLevel || 0)) * 0.01;
+      const eLevel = node.energyLevel || 0;
+
+      const dataArray = generateProceduralFrequency(node.id.toString(), time, eLevel);
+      const visualizer = audioVisualizers.get(node.id.toString());
+      if (visualizer) {
+        visualizer.update(dataArray, time, eLevel);
+        visualizer.setPosition(node.position);
+      }
+
+      // Size the instanced sphere to match the visualizer radius for raycast detection
+      dummy.position.copy(node.position);
+      const vizRadius = Math.max(2, node.size * 0.8);
+      dummy.scale.setScalar(vizRadius);
+      dummy.updateMatrix();
+      nodeMesh.setMatrixAt(i, dummy.matrix);
+      nodeMesh.setColorAt(i, node.color);
+
+      continue; // Skip drift physics for Core
+    }
 
     // Simplex noise based drift offset target
     const nx = noise3D(node.basePosition.x * 0.01, node.basePosition.y * 0.01, time * CONFIG.driftSpeed);
@@ -2147,8 +2201,77 @@ function updateSearchResults() {
 
 function onDoubleClick() {
   if (hoveredNodeId !== null) {
-    flyToNode(hoveredNodeId);
+    const node = graphData.nodes[hoveredNodeId];
+    if (node.type === NodeType.Core) {
+      openHubSwitcher();
+    } else {
+      flyToNode(hoveredNodeId);
+    }
   }
+}
+
+function openHubSwitcher() {
+  if (isHubSwitcherOpen) return;
+  isHubSwitcherOpen = true;
+
+  // Populate the grid with all StreamHub nodes
+  hubSwitcherGrid.innerHTML = '';
+  const streamHubs = graphData.nodes.filter(n => n.type === NodeType.StreamHub);
+
+  streamHubs.forEach((hub, index) => {
+    const card = document.createElement('div');
+    card.className = 'hub-switcher-card';
+    // Stagger the entrance animation
+    card.style.transitionDelay = `${0.15 + index * 0.02}s`;
+
+    const dot = document.createElement('div');
+    dot.className = 'hub-card-dot';
+
+    // If the hub has a detected topic color, use it
+    if (hub.currentTopic) {
+      dot.style.background = `#${hub.color.getHexString()}`;
+      dot.style.boxShadow = `0 0 8px #${hub.color.getHexString()}80`;
+    }
+
+    const name = document.createElement('span');
+    name.className = 'hub-card-name';
+    name.textContent = hub.text;
+
+    card.appendChild(dot);
+    card.appendChild(name);
+
+    card.addEventListener('click', () => {
+      closeHubSwitcher();
+      // Small delay so the exit animation plays before fly starts
+      setTimeout(() => {
+        flyToNode(hub.id);
+      }, 350);
+    });
+
+    hubSwitcherGrid.appendChild(card);
+  });
+
+  // Activate the overlay (triggers CSS transitions)
+  requestAnimationFrame(() => {
+    hubSwitcherOverlay.classList.add('active');
+  });
+
+  // Pause auto-rotate
+  controls.autoRotate = false;
+}
+
+function closeHubSwitcher() {
+  if (!isHubSwitcherOpen) return;
+  isHubSwitcherOpen = false;
+
+  hubSwitcherOverlay.classList.remove('active');
+
+  // Resume auto-rotate after animation completes
+  setTimeout(() => {
+    if (!isHubSwitcherOpen) {
+      controls.autoRotate = true;
+    }
+  }, 600);
 }
 
 
